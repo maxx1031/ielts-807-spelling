@@ -37,6 +37,7 @@
   .fb .ans { font-size:30px; letter-spacing:1px; }
   .fb .miss { color:var(--bad); text-decoration:underline; }
   .keys { margin-top:8px; }
+  .zh { font-size:19px; color:#555; margin-top:6px; }
   .score { font-size:56px; margin:10px 0; }
 </style>
 </head>
@@ -80,7 +81,7 @@
 </div>
 <script src="words.js"></script>
 <script>
-const W = window.WANGLU807, N = 10, SIZE = 100, NG = Math.ceil(W.length / SIZE);
+const W = window.WANGLU807, ZH = window.WANGLU807_ZH || [], N = 10, SIZE = 100, NG = Math.ceil(W.length / SIZE);
 const $ = id => document.getElementById(id);
 const LS = { get: (k, d) => { try { return JSON.parse(localStorage.getItem("w807_" + k)) ?? d; } catch { return d; } },
              set: (k, v) => localStorage.setItem("w807_" + k, JSON.stringify(v)) };
@@ -151,11 +152,11 @@ function submit() {
   const ok = norm(v) === norm(w);
   res[idx] = ok; dots();
   if (ok) {
-    $("inp").className = "ok"; $("fb").innerHTML = `✅ <span class="ans">${w}</span>`;
+    $("inp").className = "ok"; $("fb").innerHTML = `✅ <span class="ans">${w}</span><div class="zh">${ZH[i] || ""}</div>`;
     known.add(i); if (book[i] && --book[i] <= 0) delete book[i]; save();
-    state = "wait"; setTimeout(() => { if (state === "wait") { idx++; next(); } }, 700);
+    state = "wait"; setTimeout(() => { if (state === "wait") { idx++; next(); } }, 1300);
   } else {
-    $("inp").className = "bad"; $("fb").innerHTML = `<span class="ans">${diff(v, w)}</span><div class="muted">你写的：${v.replace(/</g, "&lt;")}</div>`;
+    $("inp").className = "bad"; $("fb").innerHTML = `<span class="ans">${diff(v, w)}</span><div class="zh">${ZH[i] || ""}</div><div class="muted">你写的：${v.replace(/</g, "&lt;")}</div>`;
     book[i] = 2; save();
     retype = true; $("inp").value = ""; $("inp").placeholder = "照着拼一遍"; $("keys").textContent = "照着正确拼写打一遍 → 回车";
     speak(false);
