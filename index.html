@@ -39,6 +39,11 @@
   .keys { margin-top:8px; }
   .zh { font-size:19px; color:#555; margin-top:6px; }
   .score { font-size:56px; margin:10px 0; }
+  .pbtns { display:flex; gap:12px; width:100%; margin-top:28px; }
+  .pb { flex:1; font-size:26px; padding:20px 8px; border:2px solid #ddd; border-radius:14px; background:var(--card); cursor:pointer; }
+  .pb small { display:block; font-size:15px; color:#888; margin-top:4px; min-height:18px; }
+  .pb.right { border-color:var(--ok); background:#e8f5e9; } .pb.wrong { border-color:var(--bad); background:#ffebee; }
+  .cmp { margin-top:10px; } .cmp button { font-size:15px; padding:8px 12px; margin:0 4px; border:2px solid #ddd; border-radius:8px; background:#fff; cursor:pointer; }
 </style>
 </head>
 <body>
@@ -51,6 +56,7 @@
     <button class="big" id="go"></button>
     <button class="big ghost hidden" id="goBook"></button>
     <button class="big ghost" id="goDates">📅 月份 + 星期专练（19 词）</button>
+    <button class="big ghost" id="goPairs">👂 近音辨词（48 对）</button>
     <details>
       <summary>换一组（共 19 组）</summary>
       <div class="grid" id="grid"></div>
@@ -69,6 +75,18 @@
     </div>
   </section>
 
+  <!-- 近音辨词 -->
+  <section id="pair" class="hidden">
+    <div class="top"><div class="dots" id="pdots"></div><button class="x" id="pquit">✕ 退出</button></div>
+    <div class="stage">
+      <button class="play" id="ppl" title="重播（Tab）">🔊</button>
+      <button class="slow" id="psl">🐢 慢速再听</button>
+      <div class="pbtns"><button class="pb" id="pb0"></button><button class="pb" id="pb1"></button></div>
+      <div class="fb" id="pfb"></div>
+      <div class="muted keys">按 1 / 2 选 · Tab 重播 · 回车 下一个</div>
+    </div>
+  </section>
+
   <!-- 结束 -->
   <section id="end" class="hidden">
     <div class="stage" style="min-height:70vh">
@@ -81,6 +99,7 @@
 
 </div>
 <script src="words.js"></script>
+<script src="pairs.js"></script>
 <script>
 const W = window.WANGLU807, ZH = window.WANGLU807_ZH || [], N = 10, SIZE = 100, NG = Math.ceil(W.length / SIZE);
 const $ = id => document.getElementById(id);
@@ -95,7 +114,7 @@ const gRange = g => [g * SIZE, Math.min((g + 1) * SIZE, W.length)];
 const gDone = g => { const [a, b] = gRange(g); let n = 0; for (let i = a; i < b; i++) if (known.has(i)) n++; return [n, b - a]; };
 const save = () => { LS.set("known", [...known]); LS.set("book", book); LS.set("cur", cur); };
 
-function show(id) { ["home", "play", "end"].forEach(s => $(s).classList.toggle("hidden", s !== id)); }
+function show(id) { ["home", "play", "pair", "end"].forEach(s => $(s).classList.toggle("hidden", s !== id)); }
 function home() {
   state = "idle"; show("home");
   const [n, t] = gDone(cur);
@@ -110,6 +129,7 @@ function home() {
   document.querySelectorAll(".g").forEach(el => el.onclick = () => { cur = +el.dataset.g; save(); home(); });
 }
 function start(m) {
+  if (m === "pair") return startPair();
   mode = m;
   if (m === "book") round = shuffle(Object.keys(book).map(Number)).slice(0, N);
   else if (m === "dates") round = shuffle(W.map((w, i) => i).filter(i => /^(January|February|March|April|May|June|July|August|September|October|November|December|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)$/.test(W[i]))).slice(0, N);
@@ -175,6 +195,68 @@ function end() {
 $("go").onclick = () => start("group");
 $("goBook").onclick = () => start("book");
 $("goDates").onclick = () => start("dates");
+$("goPairs").onclick = () => start("pair");
+
+// ---- 音效 ----
+const SFX = { ding: new Audio("sfx/ding.mp3"), tada: new Audio("sfx/tada.mp3") };
+const sfx = n => { const a = SFX[n]; a.currentTime = 0; a.play().catch(() => {}); };
+let actx = null;
+function buzz() {
+  actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+  [0, 0.16].forEach((t, k) => { const o = actx.createOscillator(), g = actx.createGain(), t0 = actx.currentTime + t;
+    o.type = "triangle"; o.frequency.setValueAtTime(k ? 196 : 247, t0);
+    g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.35, t0 + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.14);
+    o.connect(g).connect(actx.destination); o.start(t0); o.stop(t0 + 0.16); });
+}
+
+// ---- 近音辨词：听一个词，二选一 ----
+const PAIRS = window.PAIRS || [];
+let pr = [], pi = 0, pres = [], pstate = "idle", ptarget = 0, pbook = LS.get("pairbook", {});
+function pAudio(w, slow) { if (audio) audio.pause(); audio = new Audio(`audio/pairs/${encodeURIComponent(w)}.mp3`); audio.playbackRate = slow ? 0.7 : 1; audio.play().catch(() => {}); }
+function startPair() {
+  mode = "pair"; state = "pairing";
+  const idx = PAIRS.map((_, i) => i), wrong = shuffle(idx.filter(i => pbook[i])), rest = shuffle(idx.filter(i => !pbook[i]));
+  pr = shuffle([...wrong.slice(0, 4), ...rest].slice(0, N)); pi = 0; pres = [];
+  show("pair"); pNext();
+}
+function pDots() { $("pdots").innerHTML = pr.map((_, i) => `<div class="dot ${pres[i] === true ? "ok" : pres[i] === false ? "bad" : ""} ${i === pi ? "now" : ""}"></div>`).join(""); }
+function pNext() {
+  if (pi >= pr.length) return pEnd();
+  pstate = "ask"; const p = PAIRS[pr[pi]];
+  ptarget = Math.random() < .5 ? 0 : 1;
+  const order = Math.random() < .5 ? [0, 1] : [1, 0];
+  order.forEach((k, b) => { const el = $("pb" + b); el.className = "pb"; el.dataset.k = k; el.innerHTML = `${p[k * 2]}<small></small>`; });
+  $("pfb").innerHTML = ""; pDots(); setTimeout(() => pAudio(p[ptarget * 2]), 150);
+}
+function pPick(b) {
+  if (pstate !== "ask") return; pstate = "shown";
+  const p = PAIRS[pr[pi]], k = +$("pb" + b).dataset.k, ok = k === ptarget;
+  pres[pi] = ok; ok ? sfx("ding") : buzz();
+  if (ok) { if (pbook[pr[pi]] && --pbook[pr[pi]] <= 0) delete pbook[pr[pi]]; } else pbook[pr[pi]] = 2;
+  LS.set("pairbook", pbook);
+  [0, 1].forEach(bb => { const el = $("pb" + bb), kk = +el.dataset.k; el.innerHTML = `${p[kk * 2]}<small>${p[kk * 2 + 1]}</small>`;
+    if (kk === ptarget) el.classList.add("right"); else if (bb === b) el.classList.add("wrong"); });
+  $("pfb").innerHTML = `${ok ? "✅" : "❌"} 刚才读的是 <b>${p[ptarget * 2]}</b><div class="muted">${p[4]}</div>`
+    + `<div class="cmp"><button data-w="${p[0]}">🔊 ${p[0]}</button><button data-w="${p[2]}">🔊 ${p[2]}</button></div>`;
+  document.querySelectorAll(".cmp button").forEach(el => el.onclick = () => pAudio(el.dataset.w));
+  pDots();
+}
+function pEnd() {
+  state = "end"; show("end"); sfx("tada");
+  const n = pres.filter(Boolean).length;
+  $("sc").textContent = `${n} / ${pr.length}`;
+  $("scTip").textContent = `错的对子会优先再出 · 待复习 ${Object.keys(pbook).length} 对`;
+}
+$("pb0").onclick = () => pPick(0); $("pb1").onclick = () => pPick(1);
+$("ppl").onclick = () => pAudio(PAIRS[pr[pi]][ptarget * 2]);
+$("psl").onclick = () => pAudio(PAIRS[pr[pi]][ptarget * 2], true);
+$("pquit").onclick = home;
+document.addEventListener("keydown", e => {
+  if ($("pair").classList.contains("hidden")) return;
+  if (e.key === "1" || e.key === "2") { e.preventDefault(); pPick(+e.key - 1); }
+  else if (e.key === "Tab") { e.preventDefault(); pAudio(PAIRS[pr[pi]][ptarget * 2], e.shiftKey); }
+  else if (e.key === "Enter" && pstate === "shown") { e.preventDefault(); pi++; pNext(); }
+});
 $("again").onclick = () => start(mode);
 $("back").onclick = home;
 $("quit").onclick = home;
