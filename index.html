@@ -50,6 +50,7 @@
     <div class="muted">听一个词 → 拼出来。每轮 10 个，约 3 分钟。</div>
     <button class="big" id="go"></button>
     <button class="big ghost hidden" id="goBook"></button>
+    <button class="big ghost" id="goDates">📅 月份 + 星期专练（19 词）</button>
     <details>
       <summary>换一组（共 19 组）</summary>
       <div class="grid" id="grid"></div>
@@ -111,6 +112,7 @@ function home() {
 function start(m) {
   mode = m;
   if (m === "book") round = shuffle(Object.keys(book).map(Number)).slice(0, N);
+  else if (m === "dates") round = shuffle(W.map((w, i) => i).filter(i => /^(January|February|March|April|May|June|July|August|September|October|November|December|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)$/.test(W[i]))).slice(0, N);
   else {
     const [a, b] = gRange(cur), all = Array.from({ length: b - a }, (_, i) => a + i);
     const wrong = all.filter(i => book[i]), fresh = all.filter(i => !known.has(i) && !book[i]), rest = all.filter(i => known.has(i) && !book[i]);
@@ -167,11 +169,12 @@ function end() {
   const n = res.filter(Boolean).length;
   $("sc").textContent = `${n} / ${round.length}`;
   const [d, t] = gDone(cur);
-  $("scTip").textContent = mode === "book" ? `错词本还剩 ${Object.keys(book).length} 个` : `第 ${cur + 1} 组已拼对 ${d}/${t}` + (d === t ? " 🎉 可以换下一组了" : "");
+  $("scTip").textContent = mode === "book" ? `错词本还剩 ${Object.keys(book).length} 个` : mode === "dates" ? "雅思不扣大小写，但字母一个都不能错；再来一轮换一批" : `第 ${cur + 1} 组已拼对 ${d}/${t}` + (d === t ? " 🎉 可以换下一组了" : "");
   if (mode === "group" && d === t && cur < NG - 1) { cur++; save(); }
 }
 $("go").onclick = () => start("group");
 $("goBook").onclick = () => start("book");
+$("goDates").onclick = () => start("dates");
 $("again").onclick = () => start(mode);
 $("back").onclick = home;
 $("quit").onclick = home;
