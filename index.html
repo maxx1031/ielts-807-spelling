@@ -55,8 +55,10 @@
     <div class="muted">听一个词 → 拼出来。每轮 10 个，约 3 分钟。</div>
     <button class="big" id="go"></button>
     <button class="big ghost hidden" id="goBook"></button>
+    <button class="big ghost" id="goHundred">💯 100 词挑战（约 30 分钟，可随时退出）</button>
     <button class="big ghost" id="goDates">📅 月份 + 星期专练（19 词）</button>
     <button class="big ghost" id="goPairs">👂 近音辨词（48 对）</button>
+    <div id="topics"></div>
     <details>
       <summary>换一组（共 19 组）</summary>
       <div class="grid" id="grid"></div>
@@ -100,17 +102,24 @@
 </div>
 <script src="words.js"></script>
 <script src="pairs.js"></script>
+<script src="topics.js"></script>
 <script>
-const W = window.WANGLU807, ZH = window.WANGLU807_ZH || [], N = 10, SIZE = 100, NG = Math.ceil(W.length / SIZE);
+const W = window.WANGLU807, ZH = window.WANGLU807_ZH || [], BASE = W.length, N = 10, SIZE = 100, NG = Math.ceil(BASE / SIZE);
+// 话题词接在 807 后面（只能追加，错词本按位置记）；"a|b" = 两种拼写都算对
+const TOP = (window.TOPICS || []).map(t => ({ name: t.name, idx: t.words.map(([w, z]) => { ZH[W.length] = z; W.push(w); return W.length - 1; }) }));
+const alts = w => w.split("|"), first = w => alts(w)[0];
+const slug = t => t.toLowerCase().replace(/[^a-z]+/g, "-").replace(/^-|-$/g, "");
+let tsel = 0;
 const $ = id => document.getElementById(id);
 const LS = { get: (k, d) => { try { return JSON.parse(localStorage.getItem("w807_" + k)) ?? d; } catch { return d; } },
              set: (k, v) => localStorage.setItem("w807_" + k, JSON.stringify(v)) };
 let known = new Set(LS.get("known", [])), book = LS.get("book", {}), cur = LS.get("cur", 0);
+if (!LS.get("seed_voucher", 0)) { const v = W.indexOf("voucher"); if (v >= 0) book[v] = 1; LS.set("seed_voucher", 1); LS.set("book", book); } // 11/6 听力错了 voucher
 let round = [], idx = 0, res = [], state = "idle", retype = false, audio = null, mode = "group";
 
 const norm = s => s.toLowerCase().replace(/[’']/g, "'").replace(/[^a-z' -]/g, "").replace(/[\s-]+/g, " ").trim();
 const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.random() * (i + 1) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
-const gRange = g => [g * SIZE, Math.min((g + 1) * SIZE, W.length)];
+const gRange = g => [g * SIZE, Math.min((g + 1) * SIZE, BASE)];
 const gDone = g => { const [a, b] = gRange(g); let n = 0; for (let i = a; i < b; i++) if (known.has(i)) n++; return [n, b - a]; };
 const save = () => { LS.set("known", [...known]); LS.set("book", book); LS.set("cur", cur); };
 
@@ -122,6 +131,8 @@ function home() {
   const nb = Object.keys(book).length;
   $("goBook").classList.toggle("hidden", !nb);
   $("goBook").textContent = `📕 错词本（${nb}）`;
+  $("topics").innerHTML = TOP.map((t, k) => `<button class="big ghost" data-t="${k}">${t.name}（${t.idx.filter(i => known.has(i)).length}/${t.idx.length}）</button>`).join("");
+  document.querySelectorAll("#topics button").forEach(b => b.onclick = () => { tsel = +b.dataset.t; start("topic"); });
   $("grid").innerHTML = Array.from({ length: NG }, (_, g) => {
     const [d, t] = gDone(g);
     return `<div class="g ${g === cur ? "cur" : ""} ${d === t ? "full" : ""}" data-g="${g}">第 ${g + 1} 组<small>${d}/${t}</small></div>`;
@@ -133,7 +144,16 @@ function start(m) {
   mode = m;
   if (m === "book") round = shuffle(Object.keys(book).map(Number)).slice(0, N);
   else if (m === "dates") round = shuffle(W.map((w, i) => i).filter(i => /^(January|February|March|April|May|June|July|August|September|October|November|December|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)$/.test(W[i]))).slice(0, N);
-  else {
+  else if (m === "topic") {
+    const ix = TOP[tsel].idx;
+    round = shuffle([...shuffle(ix.filter(i => book[i])), ...shuffle(ix.filter(i => !known.has(i) && !book[i])), ...shuffle(ix.filter(i => known.has(i) && !book[i]))].slice(0, N));
+  } else if (m === "hundred") { // 错词本 ≤20 + 话题新词 ≤20 + 从当前组往后的新词，凑满 100
+    const fresh = [];
+    for (let g = cur; g < NG && fresh.length < 100; g++) { const [a, b] = gRange(g); for (let i = a; i < b; i++) if (!known.has(i) && !book[i]) fresh.push(i); }
+    const bk = shuffle(Object.keys(book).map(Number)).slice(0, 20);
+    const tp = shuffle(TOP.flatMap(t => t.idx).filter(i => !known.has(i) && !book[i])).slice(0, 20);
+    round = shuffle([...bk, ...tp, ...fresh].slice(0, 100));
+  } else {
     const [a, b] = gRange(cur), all = Array.from({ length: b - a }, (_, i) => a + i);
     const wrong = all.filter(i => book[i]), fresh = all.filter(i => !known.has(i) && !book[i]), rest = all.filter(i => known.has(i) && !book[i]);
     round = shuffle([...shuffle(wrong).slice(0, 2), ...shuffle(fresh), ...shuffle(rest)].slice(0, N));
@@ -141,13 +161,15 @@ function start(m) {
   if (!round.length) return home();
   idx = 0; res = []; show("play"); next();
 }
-function dots() { $("dots").innerHTML = round.map((_, i) => `<div class="dot ${res[i] === true ? "ok" : res[i] === false ? "bad" : ""} ${i === idx ? "now" : ""}"></div>`).join(""); }
+function dots() {
+  if (round.length > 20) { const ok = res.filter(Boolean).length, bad = res.filter(r => r === false).length; $("dots").innerHTML = `<b>${Math.min(idx + 1, round.length)} / ${round.length}</b>　✅ ${ok}　❌ ${bad}`; return; }
+  $("dots").innerHTML = round.map((_, i) => `<div class="dot ${res[i] === true ? "ok" : res[i] === false ? "bad" : ""} ${i === idx ? "now" : ""}"></div>`).join(""); }
 function speak(slow) {
   const i = round[idx];
   if (audio) audio.pause();
-  audio = new Audio(`audio/${String(i + 1).padStart(4, "0")}.mp3`);
+  audio = new Audio(i < BASE ? `audio/${String(i + 1).padStart(4, "0")}.mp3` : `audio/topic/${slug(first(W[i]))}.mp3`);
   audio.playbackRate = slow ? 0.7 : 1;
-  audio.onerror = () => { const u = new SpeechSynthesisUtterance(W[i]); u.lang = "en-GB"; u.rate = slow ? 0.55 : 0.85; speechSynthesis.speak(u); };
+  audio.onerror = () => { const u = new SpeechSynthesisUtterance(first(W[i])); u.lang = "en-GB"; u.rate = slow ? 0.55 : 0.85; speechSynthesis.speak(u); };
   audio.play().catch(audio.onerror);
 }
 function next() {
@@ -168,17 +190,17 @@ function submit() {
   const v = $("inp").value, i = round[idx], w = W[i];
   if (!norm(v)) return;
   if (retype) { // 错了必须照着拼对一次
-    if (norm(v) === norm(w)) { idx++; next(); } else { $("inp").className = "bad"; $("inp").value = ""; }
+    if (alts(w).some(x => norm(v) === norm(x))) { idx++; next(); } else { $("inp").className = "bad"; $("inp").value = ""; }
     return;
   }
-  const ok = norm(v) === norm(w);
+  const ok = alts(w).some(x => norm(v) === norm(x));
   res[idx] = ok; dots();
   if (ok) {
-    $("inp").className = "ok"; $("fb").innerHTML = `✅ <span class="ans">${w}</span><div class="zh">${ZH[i] || ""}</div>`;
+    $("inp").className = "ok"; $("fb").innerHTML = `✅ <span class="ans">${alts(w).join(" / ")}</span><div class="zh">${ZH[i] || ""}</div>`;
     known.add(i); if (book[i] && --book[i] <= 0) delete book[i]; save();
     state = "wait"; setTimeout(() => { if (state === "wait") { idx++; next(); } }, 1300);
   } else {
-    $("inp").className = "bad"; $("fb").innerHTML = `<span class="ans">${diff(v, w)}</span><div class="zh">${ZH[i] || ""}</div><div class="muted">你写的：${v.replace(/</g, "&lt;")}</div>`;
+    $("inp").className = "bad"; $("fb").innerHTML = `<span class="ans">${diff(v, first(w))}</span><div class="zh">${ZH[i] || ""}</div><div class="muted">你写的：${v.replace(/</g, "&lt;")}</div>`;
     book[i] = 1; save();
     retype = true; $("inp").value = ""; $("inp").placeholder = "照着拼一遍"; $("keys").textContent = "照着正确拼写打一遍 → 回车";
     speak(false);
@@ -189,12 +211,13 @@ function end() {
   const n = res.filter(Boolean).length;
   $("sc").textContent = `${n} / ${round.length}`;
   const [d, t] = gDone(cur);
-  $("scTip").textContent = mode === "book" ? `错词本还剩 ${Object.keys(book).length} 个` : mode === "dates" ? "雅思不扣大小写，但字母一个都不能错；再来一轮换一批" : `第 ${cur + 1} 组已拼对 ${d}/${t}` + (d === t ? " 🎉 可以换下一组了" : "");
+  $("scTip").textContent = mode === "book" ? `错词本还剩 ${Object.keys(book).length} 个` : mode === "dates" ? "雅思不扣大小写，但字母一个都不能错；再来一轮换一批" : mode === "topic" ? `${TOP[tsel].name}：已拼对 ${TOP[tsel].idx.filter(i => known.has(i)).length}/${TOP[tsel].idx.length}` : mode === "hundred" ? `💯 正确率 ${Math.round(n / round.length * 100)}% · 错的都进了错词本（${Object.keys(book).length}）` : `第 ${cur + 1} 组已拼对 ${d}/${t}` + (d === t ? " 🎉 可以换下一组了" : "");
   if (mode === "group" && d === t && cur < NG - 1) { cur++; save(); }
 }
 $("go").onclick = () => start("group");
 $("goBook").onclick = () => start("book");
 $("goDates").onclick = () => start("dates");
+$("goHundred").onclick = () => start("hundred");
 $("goPairs").onclick = () => start("pair");
 
 // ---- 音效 ----
