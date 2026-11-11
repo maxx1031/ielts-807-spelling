@@ -63,6 +63,7 @@
     <button class="tg" id="examT"></button>
     <button class="big" id="go"></button>
     <button class="big ghost hidden" id="goBook"></button>
+    <button class="big ghost hidden" id="goList"></button>
     <button class="big ghost" id="goHundred">💯 100 词挑战（约 30 分钟，可随时退出）</button>
     <button class="big ghost" id="goDates">📅 月份 + 星期专练（19 词）</button>
     <button class="big ghost" id="goPairs">👂 近音辨词（48 对）</button>
@@ -98,6 +99,12 @@
   </section>
 
   <!-- 结束 -->
+  <section id="list" class="hidden">
+    <div class="top"><b>📋 错词清单</b><button class="x" id="lquit">✕ 返回</button></div>
+    <div class="muted" style="margin-top:8px">🔴 = 还在错词本 · 🟢 = 后来拼对了（也留着，方便抄写）</div>
+    <table class="rt" id="ltab"></table>
+  </section>
+
   <section id="end" class="hidden">
     <div class="stage" style="min-height:70vh">
       <div class="score" id="sc"></div>
@@ -129,15 +136,16 @@ let known = new Set(LS.get("known", [])), book = LS.get("book", {}), cur = LS.ge
   LS.set("seeded", done); LS.set("book", book);
 }
 let exam = LS.get("exam", false), answers = [];
+let ever = new Set(LS.get("ever", [...Object.keys(book).map(Number)])); // 所有错过的词（拼对也不删）
 let round = [], idx = 0, res = [], state = "idle", retype = false, audio = null, mode = "group";
 
 const norm = s => s.toLowerCase().replace(/[’']/g, "'").replace(/[^a-z' -]/g, "").replace(/[\s-]+/g, " ").trim();
 const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.random() * (i + 1) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const gRange = g => [g * SIZE, Math.min((g + 1) * SIZE, BASE)];
 const gDone = g => { const [a, b] = gRange(g); let n = 0; for (let i = a; i < b; i++) if (known.has(i)) n++; return [n, b - a]; };
-const save = () => { LS.set("known", [...known]); LS.set("book", book); LS.set("cur", cur); };
+const save = () => { Object.keys(book).forEach(k => ever.add(+k)); LS.set("known", [...known]); LS.set("book", book); LS.set("cur", cur); LS.set("ever", [...ever]); };
 
-function show(id) { ["home", "play", "pair", "end"].forEach(s => $(s).classList.toggle("hidden", s !== id)); }
+function show(id) { ["home", "play", "pair", "end", "list"].forEach(s => $(s).classList.toggle("hidden", s !== id)); }
 function home() {
   state = "idle"; show("home");
   $("examT").className = "tg" + (exam ? " on" : "");
@@ -147,6 +155,7 @@ function home() {
   const nb = Object.keys(book).length;
   $("goBook").classList.toggle("hidden", !nb);
   $("goBook").textContent = `📕 错词本（${nb}）`;
+  save(); $("goList").classList.toggle("hidden", !ever.size); $("goList").textContent = `📋 错词清单 · 抄写用（${ever.size}）`;
   $("topics").innerHTML = TOP.map((t, k) => `<button class="big ghost" data-t="${k}">${t.name}（${t.idx.filter(i => known.has(i)).length}/${t.idx.length}）</button>`).join("");
   document.querySelectorAll("#topics button").forEach(b => b.onclick = () => { tsel = +b.dataset.t; start("topic"); });
   $("grid").innerHTML = Array.from({ length: NG }, (_, g) => {
@@ -242,6 +251,13 @@ function end() {
 $("go").onclick = () => start("group");
 $("goBook").onclick = () => start("book");
 $("goDates").onclick = () => start("dates");
+$("goList").onclick = () => {
+  state = "list"; show("list");
+  const ix = [...ever].sort((a, b) => (!!book[b] - !!book[a]) || a - b);
+  $("ltab").innerHTML = ix.map(i => `<tr><td>${book[i] ? "🔴" : "🟢"}</td><td><b>${alts(W[i]).join(" / ")}</b></td><td class="muted">${ZH[i] || ""}</td><td><button data-i="${i}">🔊</button></td></tr>`).join("");
+  document.querySelectorAll("#ltab button").forEach(b => b.onclick = () => { const k = +b.dataset.i; if (audio) audio.pause(); audio = new Audio(k < BASE ? `audio/${String(k + 1).padStart(4, "0")}.mp3` : `audio/topic/${slug(first(W[k]))}.mp3`); audio.play().catch(() => {}); });
+};
+$("lquit").onclick = home;
 $("examT").onclick = () => { exam = !exam; LS.set("exam", exam); home(); };
 $("goHundred").onclick = () => start("hundred");
 $("goPairs").onclick = () => start("pair");
