@@ -44,6 +44,13 @@
   .pb small { display:block; font-size:15px; color:#888; margin-top:4px; min-height:18px; }
   .pb.right { border-color:var(--ok); background:#e8f5e9; } .pb.wrong { border-color:var(--bad); background:#ffebee; }
   .cmp { margin-top:10px; } .cmp button { font-size:15px; padding:8px 12px; margin:0 4px; border:2px solid #ddd; border-radius:8px; background:#fff; cursor:pointer; }
+  .dot.done { background:#9a9a9a; }
+  .tg { margin-top:14px; width:100%; font-size:17px; padding:12px; border-radius:14px; border:2px dashed #ccc; background:none; cursor:pointer; }
+  .tg.on { border:2px solid var(--acc); background:#eef3ff; }
+  .rt { width:100%; border-collapse:collapse; margin:18px 0 6px; font-size:18px; text-align:left; }
+  .rt td { padding:8px 6px; border-bottom:1px solid #e6e2da; vertical-align:top; }
+  .rt .miss { color:var(--bad); text-decoration:underline; }
+  .rt button { border:0; background:none; font-size:18px; cursor:pointer; }
 </style>
 </head>
 <body>
@@ -53,6 +60,7 @@
   <section id="home">
     <h1>🎧 807 听力拼写</h1>
     <div class="muted">听一个词 → 拼出来。每轮 10 个，约 3 分钟。</div>
+    <button class="tg" id="examT"></button>
     <button class="big" id="go"></button>
     <button class="big ghost hidden" id="goBook"></button>
     <button class="big ghost" id="goHundred">💯 100 词挑战（约 30 分钟，可随时退出）</button>
@@ -94,6 +102,7 @@
     <div class="stage" style="min-height:70vh">
       <div class="score" id="sc"></div>
       <div class="muted" id="scTip"></div>
+      <table class="rt" id="rtab"></table>
       <button class="big" id="again">再来一轮（回车）</button>
       <button class="big ghost" id="back">回首页</button>
     </div>
@@ -119,6 +128,7 @@ let known = new Set(LS.get("known", [])), book = LS.get("book", {}), cur = LS.ge
   ["voucher", "hairdresser", "motorbike"].forEach(w => { const v = W.indexOf(w); if (v >= 0 && !done.includes(w)) { book[v] = 1; done.push(w); } });
   LS.set("seeded", done); LS.set("book", book);
 }
+let exam = LS.get("exam", false), answers = [];
 let round = [], idx = 0, res = [], state = "idle", retype = false, audio = null, mode = "group";
 
 const norm = s => s.toLowerCase().replace(/[’']/g, "'").replace(/[^a-z' -]/g, "").replace(/[\s-]+/g, " ").trim();
@@ -130,6 +140,8 @@ const save = () => { LS.set("known", [...known]); LS.set("book", book); LS.set("
 function show(id) { ["home", "play", "pair", "end"].forEach(s => $(s).classList.toggle("hidden", s !== id)); }
 function home() {
   state = "idle"; show("home");
+  $("examT").className = "tg" + (exam ? " on" : "");
+  $("examT").textContent = exam ? "📝 听写模式：开（听完 10 个再一起对答案）" : "📝 听写模式：关（每个词马上对答案）· 点我切换";
   const [n, t] = gDone(cur);
   $("go").textContent = `▶ 开始：第 ${cur + 1} 组（${n}/${t}）`;
   const nb = Object.keys(book).length;
@@ -163,11 +175,12 @@ function start(m) {
     round = shuffle([...shuffle(wrong).slice(0, 2), ...shuffle(fresh), ...shuffle(rest)].slice(0, N));
   }
   if (!round.length) return home();
-  idx = 0; res = []; show("play"); next();
+  idx = 0; res = []; answers = []; show("play"); next();
 }
 function dots() {
+  if (round.length > 20 && exam) { $("dots").innerHTML = `<b>${Math.min(idx + 1, round.length)} / ${round.length}</b>　📝 听写中，最后对答案`; return; }
   if (round.length > 20) { const ok = res.filter(Boolean).length, bad = res.filter(r => r === false).length; $("dots").innerHTML = `<b>${Math.min(idx + 1, round.length)} / ${round.length}</b>　✅ ${ok}　❌ ${bad}`; return; }
-  $("dots").innerHTML = round.map((_, i) => `<div class="dot ${res[i] === true ? "ok" : res[i] === false ? "bad" : ""} ${i === idx ? "now" : ""}"></div>`).join(""); }
+  $("dots").innerHTML = round.map((_, i) => `<div class="dot ${exam ? (res[i] !== undefined ? "done" : "") : res[i] === true ? "ok" : res[i] === false ? "bad" : ""} ${i === idx ? "now" : ""}"></div>`).join(""); }
 function speak(slow) {
   const i = round[idx];
   if (audio) audio.pause();
@@ -180,7 +193,7 @@ function next() {
   if (idx >= round.length) return end();
   state = "ask"; retype = false; dots();
   $("inp").value = ""; $("inp").className = ""; $("inp").placeholder = "听到什么拼什么"; $("fb").innerHTML = "";
-  $("keys").textContent = "回车 提交 · Tab 重播";
+  $("keys").textContent = exam ? "📝 听写模式：回车 = 下一个（不显示对错）· Tab 重播" : "回车 提交 · Tab 重播";
   $("inp").focus(); setTimeout(() => speak(false), 150);
 }
 function diff(t, c) { // 标出漏/错的字母（LCS）
@@ -198,6 +211,11 @@ function submit() {
     return;
   }
   const ok = alts(w).some(x => norm(v) === norm(x));
+  if (exam) { // 听写模式：只记录，不反馈，直接下一个
+    res[idx] = ok; answers[idx] = v;
+    if (ok) { known.add(i); if (book[i] && --book[i] <= 0) delete book[i]; } else book[i] = 1;
+    save(); idx++; next(); return;
+  }
   res[idx] = ok; dots();
   if (ok) {
     $("inp").className = "ok"; $("fb").innerHTML = `✅ <span class="ans">${alts(w).join(" / ")}</span><div class="zh">${ZH[i] || ""}</div>`;
@@ -214,6 +232,9 @@ function end() {
   state = "end"; show("end");
   const n = res.filter(Boolean).length;
   $("sc").textContent = `${n} / ${round.length}`;
+  const esc = t => String(t).replace(/</g, "&lt;");
+  $("rtab").innerHTML = exam ? round.map((i, k) => `<tr><td>${res[k] ? "✅" : "❌"}</td><td><b>${alts(W[i]).join(" / ")}</b>${res[k] ? "" : `<br><span class="muted">你写的：${esc(answers[k] || "")}</span><br>${diff(answers[k] || "", first(W[i]))}`}</td><td class="muted">${ZH[i] || ""}</td><td><button data-i="${i}">🔊</button></td></tr>`).join("") : "";
+  document.querySelectorAll("#rtab button").forEach(b => b.onclick = () => { const k = +b.dataset.i; if (audio) audio.pause(); audio = new Audio(k < BASE ? `audio/${String(k + 1).padStart(4, "0")}.mp3` : `audio/topic/${slug(first(W[k]))}.mp3`); audio.play().catch(() => {}); });
   const [d, t] = gDone(cur);
   $("scTip").textContent = mode === "book" ? `错词本还剩 ${Object.keys(book).length} 个` : mode === "dates" ? "雅思不扣大小写，但字母一个都不能错；再来一轮换一批" : mode === "topic" ? `${TOP[tsel].name}：已拼对 ${TOP[tsel].idx.filter(i => known.has(i)).length}/${TOP[tsel].idx.length}` : mode === "hundred" ? `💯 正确率 ${Math.round(n / round.length * 100)}% · 错的都进了错词本（${Object.keys(book).length}）` : `第 ${cur + 1} 组已拼对 ${d}/${t}` + (d === t ? " 🎉 可以换下一组了" : "");
   if (mode === "group" && d === t && cur < NG - 1) { cur++; save(); }
@@ -221,6 +242,7 @@ function end() {
 $("go").onclick = () => start("group");
 $("goBook").onclick = () => start("book");
 $("goDates").onclick = () => start("dates");
+$("examT").onclick = () => { exam = !exam; LS.set("exam", exam); home(); };
 $("goHundred").onclick = () => start("hundred");
 $("goPairs").onclick = () => start("pair");
 
