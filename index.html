@@ -114,7 +114,11 @@ const $ = id => document.getElementById(id);
 const LS = { get: (k, d) => { try { return JSON.parse(localStorage.getItem("w807_" + k)) ?? d; } catch { return d; } },
              set: (k, v) => localStorage.setItem("w807_" + k, JSON.stringify(v)) };
 let known = new Set(LS.get("known", [])), book = LS.get("book", {}), cur = LS.get("cur", 0);
-if (!LS.get("seed_voucher", 0)) { const v = W.indexOf("voucher"); if (v >= 0) book[v] = 1; LS.set("seed_voucher", 1); LS.set("book", book); } // 11/6 听力错了 voucher
+{ // 真题里错过的词，自动放进错词本（每个只放一次）
+  const done = LS.get("seeded", LS.get("seed_voucher", 0) ? ["voucher"] : []);
+  ["voucher", "hairdresser", "motorbike"].forEach(w => { const v = W.indexOf(w); if (v >= 0 && !done.includes(w)) { book[v] = 1; done.push(w); } });
+  LS.set("seeded", done); LS.set("book", book);
+}
 let round = [], idx = 0, res = [], state = "idle", retype = false, audio = null, mode = "group";
 
 const norm = s => s.toLowerCase().replace(/[’']/g, "'").replace(/[^a-z' -]/g, "").replace(/[\s-]+/g, " ").trim();
