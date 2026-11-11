@@ -61,6 +61,7 @@
     <h1>🎧 807 听力拼写</h1>
     <div class="muted">听一个词 → 拼出来。每轮 10 个，约 3 分钟。</div>
     <button class="tg" id="examT"></button>
+    <button class="tg" id="zhT"></button>
     <button class="big" id="go"></button>
     <button class="big ghost hidden" id="goBook"></button>
     <button class="big ghost hidden" id="goList"></button>
@@ -81,7 +82,9 @@
       <button class="play" id="pl" title="重播（Tab）">🔊</button>
       <button class="slow" id="sl">🐢 慢速再听</button>
       <input id="inp" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="听到什么拼什么">
+      <div class="zh" id="hint"></div>
       <div class="fb" id="fb"></div>
+      <button class="slow" id="peek">👀 看答案（Esc）</button>
       <div class="muted keys" id="keys">回车 提交 · Tab 重播</div>
     </div>
   </section>
@@ -135,7 +138,7 @@ let known = new Set(LS.get("known", [])), book = LS.get("book", {}), cur = LS.ge
   ["voucher", "hairdresser", "motorbike"].forEach(w => { const v = W.indexOf(w); if (v >= 0 && !done.includes(w)) { book[v] = 1; done.push(w); } });
   LS.set("seeded", done); LS.set("book", book);
 }
-let exam = LS.get("exam", false), answers = [];
+let exam = LS.get("exam", false), zhHint = LS.get("zhHint", false), answers = [];
 let ever = new Set(LS.get("ever", [...Object.keys(book).map(Number)])); // 所有错过的词（拼对也不删）
 let round = [], idx = 0, res = [], state = "idle", retype = false, audio = null, mode = "group";
 
@@ -149,6 +152,8 @@ function show(id) { ["home", "play", "pair", "end", "list"].forEach(s => $(s).cl
 function home() {
   state = "idle"; show("home");
   $("examT").className = "tg" + (exam ? " on" : "");
+  $("zhT").className = "tg" + (zhHint ? " on" : "");
+  $("zhT").textContent = zhHint ? "🀄 中文提示：开（边听边看中文意思）" : "🀄 中文提示：关（只听声音，更像考试）· 点我切换";
   $("examT").textContent = exam ? "📝 听写模式：开（听完 10 个再一起对答案）" : "📝 听写模式：关（每个词马上对答案）· 点我切换";
   const [n, t] = gDone(cur);
   $("go").textContent = `▶ 开始：第 ${cur + 1} 组（${n}/${t}）`;
@@ -202,6 +207,8 @@ function next() {
   if (idx >= round.length) return end();
   state = "ask"; retype = false; dots();
   $("inp").value = ""; $("inp").className = ""; $("inp").placeholder = "听到什么拼什么"; $("fb").innerHTML = "";
+  $("hint").textContent = zhHint ? (ZH[round[idx]] || "") : "";
+  $("peek").classList.toggle("hidden", exam);
   $("keys").textContent = exam ? "📝 听写模式：回车 = 下一个（不显示对错）· Tab 重播" : "回车 提交 · Tab 重播";
   $("inp").focus(); setTimeout(() => speak(false), 150);
 }
@@ -258,6 +265,16 @@ $("goList").onclick = () => {
   document.querySelectorAll("#ltab button").forEach(b => b.onclick = () => { const k = +b.dataset.i; if (audio) audio.pause(); audio = new Audio(k < BASE ? `audio/${String(k + 1).padStart(4, "0")}.mp3` : `audio/topic/${slug(first(W[k]))}.mp3`); audio.play().catch(() => {}); });
 };
 $("lquit").onclick = home;
+$("zhT").onclick = () => { zhHint = !zhHint; LS.set("zhHint", zhHint); home(); };
+function peek() { // 手动看答案：算错，进错词本，照着拼一遍
+  if (state !== "ask" || retype || exam) return;
+  const i = round[idx], w = W[i];
+  res[idx] = false; dots(); book[i] = 1; save();
+  $("inp").className = "bad"; $("fb").innerHTML = `<span class="ans">${alts(w).join(" / ")}</span><div class="zh">${ZH[i] || ""}</div>`;
+  retype = true; $("inp").value = ""; $("inp").placeholder = "照着拼一遍"; $("keys").textContent = "照着正确拼写打一遍 → 回车"; $("inp").focus(); speak(false);
+}
+$("peek").onclick = peek;
+document.addEventListener("keydown", e => { if (e.key === "Escape" && state === "ask") peek(); });
 $("examT").onclick = () => { exam = !exam; LS.set("exam", exam); home(); };
 $("goHundred").onclick = () => start("hundred");
 $("goPairs").onclick = () => start("pair");
