@@ -47,4 +47,18 @@ window.TOPICS = [
     ["hygiene", "n. 卫生"],
     ["takeaway", "n. 外卖（英）"],
   ]},
+  { name: "🌿 环境 · 能源", words: [
+    ["dung", "n. （动物）粪便（cow dung 牛粪）"],
+    ["manure", "n. 粪肥（chicken manure 鸡粪）"],
+    ["fermentation", "n. 发酵"],
+    ["digester", "n. 沼气池；消化器"],
+    ["biofuel", "n. 生物燃料"],
+    ["charcoal", "n. 木炭"],
+    ["firewood", "n. 柴火"],
+    ["kerosene", "n. 煤油"],
+    ["predator", "n. 捕食者；天敌"],
+    ["habitat", "n. 栖息地"],
+    ["mosquito", "n. 蚊子（复数 mosquitoes）"],
+    ["respiratory", "adj. 呼吸的（respiratory disease 呼吸道疾病）"],
+  ]},
 ];
